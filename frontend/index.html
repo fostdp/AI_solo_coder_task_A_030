@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能建筑中央空调冷站群控与能效优化系统</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/microsoft-signalr@7.0.0/dist/signalr.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-left">
+                <h1>🏢 智能建筑中央空调冷站群控与能效优化系统</h1>
+            </div>
+            <div class="header-right">
+                <div class="system-time" id="systemTime">--:--:--</div>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-indicator offline"></span>
+                    <span>未连接</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="kpi-container">
+            <div class="kpi-card energy">
+                <div class="kpi-icon">⚡</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">当日累计能耗</div>
+                    <div class="kpi-value"><span id="dailyEnergy">0</span> <span class="kpi-unit">kWh</span></div>
+                    <div class="kpi-trend down">-2.3%</div>
+                </div>
+            </div>
+            <div class="kpi-card cop">
+                <div class="kpi-icon">📊</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">实时COP</div>
+                    <div class="kpi-value"><span id="realtimeCOP">0</span></div>
+                    <div class="kpi-ratio">设计值 <span id="designCOP">5.5</span> | 比值 <span id="copRatio">0</span>%</div>
+                </div>
+            </div>
+            <div class="kpi-card saving">
+                <div class="kpi-icon">💚</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">累计节能量</div>
+                    <div class="kpi-value"><span id="energySaving">0</span> <span class="kpi-unit">kWh</span></div>
+                    <div class="kpi-trend up"><span id="savingPercent">0</span>%</div>
+                </div>
+            </div>
+            <div class="kpi-card cooling">
+                <div class="kpi-icon">❄️</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">总制冷量</div>
+                    <div class="kpi-value"><span id="coolingCapacity">0</span> <span class="kpi-unit">kW</span></div>
+                    <div class="kpi-sub">总功率 <span id="totalPower">0</span> kW</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="left-panel">
+                <div class="panel-title">
+                    <span>🔧 冷站系统流程图</span>
+                    <div class="legend">
+                        <span class="legend-item"><span class="legend-color efficient"></span>高效</span>
+                        <span class="legend-item"><span class="legend-color normal"></span>正常</span>
+                        <span class="legend-item"><span class="legend-color warning"></span>效率偏低</span>
+                        <span class="legend-item"><span class="legend-color danger"></span>故障/低效</span>
+                    </div>
+                </div>
+                <div class="canvas-container">
+                    <canvas id="flowCanvas" width="900" height="500"></canvas>
+                </div>
+            </div>
+
+            <div class="right-panel">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="alarms">⚠️ 告警信息</button>
+                    <button class="tab-btn" data-tab="optimization">📈 优化建议</button>
+                    <button class="tab-btn" data-tab="devices">📋 设备列表</button>
+                </div>
+
+                <div class="tab-content" id="alarms">
+                    <div class="alarm-list" id="alarmList">
+                        <div class="empty-state">暂无告警信息</div>
+                    </div>
+                </div>
+
+                <div class="tab-content hidden" id="optimization">
+                    <div class="optimization-card" id="optimizationCard">
+                        <div class="empty-state">加载中...</div>
+                    </div>
+                </div>
+
+                <div class="tab-content hidden" id="devices">
+                    <div class="device-list" id="deviceList">
+                        <div class="empty-state">加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="deviceModal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h2 id="modalDeviceName">设备详情</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="device-info">
+                    <div class="info-row">
+                        <span class="info-label">设备编号:</span>
+                        <span class="info-value" id="modalDeviceCode">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">设备类型:</span>
+                        <span class="info-value" id="modalDeviceType">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">运行状态:</span>
+                        <span class="info-value" id="modalDeviceStatus">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">当前功率:</span>
+                        <span class="info-value" id="modalDevicePower">- kW</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">当前负荷:</span>
+                        <span class="info-value" id="modalDeviceLoad">- %</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">实时COP:</span>
+                        <span class="info-value" id="modalDeviceCOP">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">设计COP:</span>
+                        <span class="info-value" id="modalDesignCOP">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">能效状态:</span>
+                        <span class="info-value" id="modalEfficiencyStatus">-</span>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <h3>近24小时运行参数趋势</h3>
+                    <canvas id="trendChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>能效曲线</h3>
+                    <canvas id="copChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/trend-chart.js"></script>
+    <script src="js/canvas-flow.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
