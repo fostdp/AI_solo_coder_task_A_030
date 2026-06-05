@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using ChillerPlant.Data.Repositories;
 using ChillerPlant.Models;
+using ChillerPlant.Modules.Shared.Commands;
 
 namespace ChillerPlant.Controllers
 {
@@ -13,12 +15,15 @@ namespace ChillerPlant.Controllers
     {
         private readonly IEfficiencyRepository _efficiencyRepository;
         private readonly IOptimizationRepository _optimizationRepository;
+        private readonly IMediator _mediator;
 
         public EfficiencyController(IEfficiencyRepository efficiencyRepository,
-            IOptimizationRepository optimizationRepository)
+            IOptimizationRepository optimizationRepository,
+            IMediator mediator)
         {
             _efficiencyRepository = efficiencyRepository;
             _optimizationRepository = optimizationRepository;
+            _mediator = mediator;
         }
 
         [HttpGet("realtime")]
@@ -58,9 +63,10 @@ namespace ChillerPlant.Controllers
         }
 
         [HttpPost("optimization/generate")]
-        public async Task<ActionResult<OptimizationRecommendation>> GenerateOptimization()
+        public async Task<ActionResult<OptimizationRecommendationDto>> GenerateOptimization()
         {
-            var recommendation = await _optimizationRepository.GenerateOptimizationAsync();
+            var recommendation = await _mediator.Send(new GenerateOptimizationCommand());
+            if (recommendation == null) return BadRequest("Unable to generate optimization recommendation");
             return Ok(recommendation);
         }
 
@@ -72,9 +78,11 @@ namespace ChillerPlant.Controllers
         }
 
         [HttpPost("optimization/train")]
-        public async Task<ActionResult> TrainModel()
+        public async Task<ActionResult> TrainModel([FromBody] TrainModelRequest request = null)
         {
-            await _optimizationRepository.TrainModelAsync();
+            var epochs = request?.Epochs ?? 200;
+            var success = await _mediator.Send(new TrainOptimizationModelCommand { Epochs = epochs });
+            if (!success) return BadRequest("Insufficient training data or training failed");
             return Ok(new { Success = true, Message = "Model training completed" });
         }
 
@@ -115,5 +123,10 @@ namespace ChillerPlant.Controllers
             await _efficiencyRepository.UpdateDailyEnergyConsumptionAsync();
             return Ok(new { Success = true });
         }
+    }
+
+    public class TrainModelRequest
+    {
+        public int Epochs { get; set; } = 200;
     }
 }

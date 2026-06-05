@@ -213,6 +213,8 @@ namespace ChillerPlant.Models
         public decimal? ExpectedEnergySavingPercent { get; set; }
         [MaxLength(500)]
         public string OptimizationStrategy { get; set; }
+        [MaxLength(1000)]
+        public string Description { get; set; }
         public bool IsImplemented { get; set; } = false;
         public DateTime? ImplementedAt { get; set; }
         public decimal? ActualCOPAfterImpl { get; set; }

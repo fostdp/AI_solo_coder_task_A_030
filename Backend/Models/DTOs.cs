@@ -58,13 +58,24 @@ namespace ChillerPlant.Models
     {
         public decimal DailyTotalEnergy { get; set; }
         public decimal RealtimeCOP { get; set; }
+        public decimal SystemCOP { get; set; }
         public decimal DesignCOP { get; set; }
         public decimal COPRatio { get; set; }
         public decimal TotalEnergySaving { get; set; }
         public decimal EnergySavingPercent { get; set; }
         public decimal TotalCoolingCapacity { get; set; }
+        public decimal TotalCooling { get; set; }
         public decimal TotalPowerConsumption { get; set; }
+        public decimal TotalPower { get; set; }
+        public int ActiveAlarmCount { get; set; }
+        public int CriticalAlarmCount { get; set; }
+        public int RunningChillerCount { get; set; }
+        public int TotalChillerCount { get; set; }
+        public int OpenWorkOrderCount { get; set; }
+        public decimal? OutdoorTemp { get; set; }
+        public decimal? WetBulbTemp { get; set; }
         public DateTime UpdateTime { get; set; }
+        public DateTime LastUpdateTime { get; set; }
         public List<DeviceStatusDto> DeviceStatusList { get; set; }
         public List<AlarmDto> ActiveAlarms { get; set; }
     }
@@ -92,16 +103,24 @@ namespace ChillerPlant.Models
     {
         public long RecommendationId { get; set; }
         public DateTime RecommendationTime { get; set; }
+        public DateTime GeneratedAt { get; set; }
         public decimal CurrentLoadRate { get; set; }
         public decimal? OutdoorTemp { get; set; }
         public decimal? WetBulbTemp { get; set; }
         public string RecommendedChillerCombination { get; set; }
         public decimal? RecommendedSupplyWaterTemp { get; set; }
         public decimal? PredictedCOP { get; set; }
+        public decimal? PredictedOptimalCOP { get; set; }
         public decimal? CurrentCOP { get; set; }
+        public decimal? CurrentSupplyTemp { get; set; }
+        public decimal? OptimalSupplyTemp { get; set; }
+        public int CurrentChillerCount { get; set; }
+        public int OptimalChillerCount { get; set; }
         public decimal? ExpectedEnergySaving { get; set; }
         public decimal? ExpectedEnergySavingPercent { get; set; }
         public string OptimizationStrategy { get; set; }
+        public string RecommendationType { get; set; }
+        public string Description { get; set; }
         public bool IsImplemented { get; set; }
     }
 

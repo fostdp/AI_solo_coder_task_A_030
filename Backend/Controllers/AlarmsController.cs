@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using ChillerPlant.Data.Repositories;
 using ChillerPlant.Models;
+using ChillerPlant.Modules.Shared.Commands;
 
 namespace ChillerPlant.Controllers
 {
@@ -12,10 +14,13 @@ namespace ChillerPlant.Controllers
     public class AlarmsController : ControllerBase
     {
         private readonly IAlarmRepository _alarmRepository;
+        private readonly IMediator _mediator;
 
-        public AlarmsController(IAlarmRepository alarmRepository)
+        public AlarmsController(IAlarmRepository alarmRepository,
+            IMediator mediator)
         {
             _alarmRepository = alarmRepository;
+            _mediator = mediator;
         }
 
         [HttpGet("active")]
@@ -40,14 +45,19 @@ namespace ChillerPlant.Controllers
         [HttpPost("check")]
         public async Task<ActionResult> CheckAlarms()
         {
-            await _alarmRepository.CheckAndCreateAlarmsAsync();
-            return Ok(new { Success = true });
+            var alarms = await _mediator.Send(new CheckAlarmsCommand());
+            return Ok(new { Success = true, GeneratedCount = alarms.Count });
         }
 
         [HttpPost("{id}/acknowledge")]
         public async Task<ActionResult> AcknowledgeAlarm(long id, [FromBody] AcknowledgeRequest request)
         {
-            await _alarmRepository.AcknowledgeAlarmAsync(id, request?.AckBy ?? "System");
+            var success = await _mediator.Send(new AcknowledgeAlarmCommand 
+            { 
+                AlarmId = id, 
+                AckBy = request?.AckBy ?? "System" 
+            });
+            if (!success) return NotFound();
             return Ok(new { Success = true });
         }
 
@@ -77,29 +87,65 @@ namespace ChillerPlant.Controllers
         [HttpPost("workorders/{id}/status")]
         public async Task<ActionResult> UpdateWorkOrderStatus(long id, [FromBody] UpdateStatusRequest request)
         {
-            await _alarmRepository.UpdateWorkOrderStatusAsync(id, request.Status, request.Remark);
+            var success = await _mediator.Send(new UpdateWorkOrderStatusCommand
+            {
+                WorkOrderId = id,
+                Status = request.Status,
+                Remark = request.Remark,
+                Assignee = request.Assignee
+            });
+            if (!success) return NotFound();
             return Ok(new { Success = true });
         }
 
         [HttpPost("workorders/{id}/start")]
-        public async Task<ActionResult> StartWorkOrder(long id)
+        public async Task<ActionResult> StartWorkOrder(long id, [FromBody] UpdateStatusRequest request = null)
         {
-            await _alarmRepository.UpdateWorkOrderStatusAsync(id, 1);
+            var success = await _mediator.Send(new UpdateWorkOrderStatusCommand
+            {
+                WorkOrderId = id,
+                Status = 1,
+                Remark = request?.Remark,
+                Assignee = request?.Assignee
+            });
+            if (!success) return NotFound();
             return Ok(new { Success = true });
         }
 
         [HttpPost("workorders/{id}/complete")]
-        public async Task<ActionResult> CompleteWorkOrder(long id, [FromBody] string remark = null)
+        public async Task<ActionResult> CompleteWorkOrder(long id, [FromBody] UpdateStatusRequest request = null)
         {
-            await _alarmRepository.UpdateWorkOrderStatusAsync(id, 2, remark);
+            var success = await _mediator.Send(new UpdateWorkOrderStatusCommand
+            {
+                WorkOrderId = id,
+                Status = 2,
+                Remark = request?.Remark,
+                Assignee = request?.Assignee
+            });
+            if (!success) return NotFound();
             return Ok(new { Success = true });
         }
 
         [HttpPost("workorders/{id}/close")]
-        public async Task<ActionResult> CloseWorkOrder(long id, [FromBody] string remark = null)
+        public async Task<ActionResult> CloseWorkOrder(long id, [FromBody] UpdateStatusRequest request = null)
         {
-            await _alarmRepository.UpdateWorkOrderStatusAsync(id, 3, remark);
+            var success = await _mediator.Send(new UpdateWorkOrderStatusCommand
+            {
+                WorkOrderId = id,
+                Status = 3,
+                Remark = request?.Remark,
+                Assignee = request?.Assignee
+            });
+            if (!success) return NotFound();
             return Ok(new { Success = true });
+        }
+
+        [HttpPost("{id}/push")]
+        public async Task<ActionResult> PushAlarmToWechat(long id)
+        {
+            var success = await _mediator.Send(new PushAlarmToWechatCommand { AlarmId = id });
+            if (!success) return NotFound();
+            return Ok(new { Success = true, Message = "Alarm queued for WeChat push" });
         }
     }
 
@@ -112,5 +158,6 @@ namespace ChillerPlant.Controllers
     {
         public int Status { get; set; }
         public string Remark { get; set; }
+        public string Assignee { get; set; }
     }
 }

@@ -4,9 +4,13 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using MediatR;
 using ChillerPlant.Data;
 using ChillerPlant.Data.Repositories;
 using ChillerPlant.Services;
+using ChillerPlant.Modules.BacnetGateway;
+using ChillerPlant.Modules.EfficiencyOptimizer;
+using ChillerPlant.Modules.AlarmManager;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -54,8 +58,11 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     }));
 
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection("AppSettings"));
-builder.Services.Configure<WechatWorkSettings>(builder.Configuration.GetSection("WechatWork"));
-builder.Services.Configure<BacnetSettings>(builder.Configuration.GetSection("BACnet"));
+builder.Services.Configure<WechatWorkSettings>(builder.Configuration.GetSection("Wechat"));
+
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(
+    typeof(Program).Assembly,
+    typeof(Modules.Shared.Commands.InsertDeviceDataCommand).Assembly));
 
 builder.Services.AddHttpClient();
 
@@ -84,10 +91,9 @@ builder.Services.AddScoped<IOptimizationRepository>(provider =>
         connectionString,
         provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AppSettings>>()));
 
-builder.Services.AddSingleton<WechatAlarmAggregatorService>();
-builder.Services.AddHostedService<WechatAlarmAggregatorService>(provider => provider.GetRequiredService<WechatAlarmAggregatorService>());
-builder.Services.AddHostedService<SystemEfficiencyService>();
-builder.Services.AddHostedService<BacnetUdpListenerService>();
+builder.Services.AddBacnetGatewayModule();
+builder.Services.AddEfficiencyOptimizerModule();
+builder.Services.AddAlarmManagerModule();
 
 var app = builder.Build();
 
