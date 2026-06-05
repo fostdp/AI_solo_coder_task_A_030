@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using ChillerPlant.Models;
+using ChillerPlant.Services;
 
 namespace ChillerPlant.Data.Repositories
 {
@@ -18,16 +19,19 @@ namespace ChillerPlant.Data.Repositories
         private readonly AppSettings _appSettings;
         private readonly WechatWorkSettings _wechatSettings;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly WechatAlarmAggregatorService _alarmAggregator;
 
         public AlarmRepository(ApplicationDbContext context, string connectionString, 
             IOptions<AppSettings> appSettings, IOptions<WechatWorkSettings> wechatSettings,
-            IHttpClientFactory httpClientFactory)
+            IHttpClientFactory httpClientFactory,
+            WechatAlarmAggregatorService alarmAggregator)
         {
             _context = context;
             _connectionString = connectionString;
             _appSettings = appSettings.Value;
             _wechatSettings = wechatSettings.Value;
             _httpClientFactory = httpClientFactory;
+            _alarmAggregator = alarmAggregator;
         }
 
         public async Task<List<AlarmDto>> GetActiveAlarmsAsync()
@@ -410,40 +414,17 @@ namespace ChillerPlant.Data.Repositories
 
             try
             {
-                var client = _httpClientFactory.CreateClient();
-                var levelText = alarm.AlarmLevel == 1 ? "一级告警" : "二级告警";
                 var deviceName = alarm.DeviceId.HasValue ? 
                     (await _context.Devices.FindAsync(alarm.DeviceId.Value))?.DeviceName : "系统";
 
-                var message = new
-                {
-                    msgtype = "markdown",
-                    markdown = new
-                    {
-                        content = $@"### <font color=""warning"">{levelText}</font>
-**告警时间**: {alarm.StartTime:yyyy-MM-dd HH:mm:ss}
-**告警设备**: {deviceName}
-**告警类型**: {alarm.AlarmType}
-**告警内容**: {alarm.AlarmMessage}
-**参数名称**: {alarm.ParameterName}
-**当前值**: {alarm.ActualValue}
-**阈值**: {alarm.ThresholdValue}"
-                    },
-                    mentioned_list = _wechatSettings.MentionedList,
-                    mentioned_mobile_list = _wechatSettings.MentionedMobileList
-                };
-
-                var json = JsonConvert.SerializeObject(message);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var response = await client.PostAsync(_wechatSettings.WebhookUrl, content);
-                var result = await response.Content.ReadAsStringAsync();
-
-                alarm.WechatPushStatus = response.IsSuccessStatusCode ? 1 : 2;
+                _alarmAggregator.EnqueueAlarm(alarm, deviceName);
+                
+                alarm.WechatPushStatus = 0;
                 await _context.SaveChangesAsync();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"推送微信告警失败: {ex.Message}");
+                Console.WriteLine($"告警入队失败: {ex.Message}");
                 alarm.WechatPushStatus = 2;
                 await _context.SaveChangesAsync();
             }

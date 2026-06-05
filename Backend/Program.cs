@@ -55,6 +55,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection("AppSettings"));
 builder.Services.Configure<WechatWorkSettings>(builder.Configuration.GetSection("WechatWork"));
+builder.Services.Configure<BacnetSettings>(builder.Configuration.GetSection("BACnet"));
 
 builder.Services.AddHttpClient();
 
@@ -83,7 +84,10 @@ builder.Services.AddScoped<IOptimizationRepository>(provider =>
         connectionString,
         provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AppSettings>>()));
 
+builder.Services.AddSingleton<WechatAlarmAggregatorService>();
+builder.Services.AddHostedService<WechatAlarmAggregatorService>(provider => provider.GetRequiredService<WechatAlarmAggregatorService>());
 builder.Services.AddHostedService<SystemEfficiencyService>();
+builder.Services.AddHostedService<BacnetUdpListenerService>();
 
 var app = builder.Build();
 
