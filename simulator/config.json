@@ -1,0 +1,225 @@
+{
+  "api_url": "http://api:80",
+  "collection_interval_seconds": 30,
+  "log_level": "INFO",
+
+  "device_performance_curves": {
+    "centrifugal_chiller": {
+      "description": "离心式冷水机组性能曲线 - COP vs 负荷率",
+      "coefficients": {
+        "a": -2.5,
+        "b": 8.5,
+        "c": -1.2
+      },
+      "optimal_load_range": [0.4, 0.85],
+      "part_load_efficiency": {
+        "1.0": 1.0,
+        "0.9": 1.03,
+        "0.8": 1.08,
+        "0.7": 1.12,
+        "0.6": 1.15,
+        "0.5": 1.10,
+        "0.4": 1.00,
+        "0.3": 0.85
+      },
+      "performance_factor": 1.0
+    },
+    "screw_chiller": {
+      "description": "螺杆式冷水机组性能曲线",
+      "coefficients": {
+        "a": -1.8,
+        "b": 6.8,
+        "c": -0.8
+      },
+      "optimal_load_range": [0.35, 0.9],
+      "part_load_efficiency": {
+        "1.0": 1.0,
+        "0.9": 1.02,
+        "0.8": 1.05,
+        "0.7": 1.08,
+        "0.6": 1.10,
+        "0.5": 1.08,
+        "0.4": 1.02,
+        "0.3": 0.90
+      },
+      "performance_factor": 1.0
+    },
+    "cooling_tower": {
+      "description": "冷却塔性能曲线 - 逼近度 vs 湿球温度",
+      "approach_temperature": 2.8,
+      "wet_bulb_design": 28.0,
+      "fan_speed_efficiency": {
+        "100": 1.0,
+        "80": 0.95,
+        "60": 0.85,
+        "40": 0.70,
+        "20": 0.50
+      },
+      "performance_factor": 1.0
+    },
+    "chilled_water_pump": {
+      "description": "冷冻水泵性能曲线",
+      "design_flow": 400,
+      "design_head": 32,
+      "efficiency_curve": {
+        "a": -0.008,
+        "b": 0.015,
+        "c": 0.85
+      },
+      "vfd_efficiency_bonus": 0.05,
+      "performance_factor": 1.0
+    },
+    "cooling_water_pump": {
+      "description": "冷却水泵性能曲线",
+      "design_flow": 450,
+      "design_head": 28,
+      "efficiency_curve": {
+        "a": -0.007,
+        "b": 0.014,
+        "c": 0.82
+      },
+      "vfd_efficiency_bonus": 0.05,
+      "performance_factor": 1.0
+    }
+  },
+
+  "devices": {
+    "centrifugal_chillers": {
+      "count": 3,
+      "prefix": "CEN-CH",
+      "rated_power_kw": 800,
+      "design_cop": 5.8,
+      "capacity_kw": 4640,
+      "performance_factor": 1.0,
+      "base_values": {
+        "supply_temp": 7.0,
+        "return_temp": 12.0,
+        "flow_rate": 450,
+        "pressure": 0.6,
+        "current": 150,
+        "voltage": 380,
+        "frequency": 50
+      },
+      "position_layout": {
+        "base_x": 200,
+        "base_y": 200,
+        "x_spacing": 80,
+        "y_spacing": 100,
+        "per_row": 4
+      }
+    },
+    "screw_chillers": {
+      "count": 2,
+      "prefix": "SCR-CH",
+      "rated_power_kw": 500,
+      "design_cop": 5.2,
+      "capacity_kw": 2600,
+      "performance_factor": 1.0,
+      "base_values": {
+        "supply_temp": 7.0,
+        "return_temp": 12.0,
+        "flow_rate": 280,
+        "pressure": 0.55,
+        "current": 95,
+        "voltage": 380,
+        "frequency": 50
+      },
+      "position_layout": {
+        "base_x": 350,
+        "base_y": 500,
+        "x_spacing": 80,
+        "y_spacing": 100,
+        "per_row": 4
+      }
+    },
+    "cooling_towers": {
+      "count": 8,
+      "prefix": "CT",
+      "rated_power_kw": 75,
+      "design_cop": 35.0,
+      "performance_factor": 1.0,
+      "base_values": {
+        "inlet_temp": 32.0,
+        "outlet_temp": 28.0,
+        "flow_rate": 500,
+        "fan_speed": 85,
+        "power": 55
+      },
+      "position_layout": {
+        "base_x": 1050,
+        "base_y": 400,
+        "x_spacing": 80,
+        "y_spacing": 100,
+        "per_row": 4
+      }
+    },
+    "chilled_water_pumps": {
+      "count": 12,
+      "prefix": "CHP",
+      "rated_power_kw": 90,
+      "design_cop": 20.0,
+      "performance_factor": 1.0,
+      "base_values": {
+        "supply_temp": 7.0,
+        "return_temp": 12.0,
+        "flow_rate": 400,
+        "pressure": 0.5,
+        "current": 170,
+        "voltage": 380,
+        "frequency": 48
+      },
+      "position_layout": {
+        "base_x": 80,
+        "base_y": 400,
+        "x_spacing": 80,
+        "y_spacing": 100,
+        "per_row": 4
+      }
+    },
+    "cooling_water_pumps": {
+      "count": 12,
+      "prefix": "CWP",
+      "rated_power_kw": 75,
+      "design_cop": 25.0,
+      "performance_factor": 1.0,
+      "base_values": {
+        "supply_temp": 28.0,
+        "return_temp": 32.0,
+        "flow_rate": 450,
+        "pressure": 0.45,
+        "current": 140,
+        "voltage": 380,
+        "frequency": 48
+      },
+      "position_layout": {
+        "base_x": 850,
+        "base_y": 400,
+        "x_spacing": 80,
+        "y_spacing": 100,
+        "per_row": 4
+      }
+    }
+  },
+
+  "fault_simulation": {
+    "enabled": true,
+    "fault_probability": 0.001,
+    "low_efficiency_probability": 0.005,
+    "recovery_probability": 0.05
+  },
+
+  "scenarios": {
+    "normal": {
+      "description": "正常工作日 - 早高峰负荷",
+      "load_profile": [
+        {"hour": 0, "load": 0.3},
+        {"hour": 6, "load": 0.4},
+        {"hour": 8, "load": 0.7},
+        {"hour": 10, "load": 0.9},
+        {"hour": 14, "load": 0.95},
+        {"hour": 18, "load": 0.8},
+        {"hour": 22, "load": 0.5}
+      ]
+    }
+  }
+}

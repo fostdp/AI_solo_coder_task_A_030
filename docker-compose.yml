@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: chiller-sqlserver
+    hostname: sqlserver
+    environment:
+      - ACCEPT_EULA=${SQL_SERVER_ACCEPT_EULA:-Y}
+      - MSSQL_SA_PASSWORD=${SQL_SERVER_PASSWORD:-YourStrong!Passw0rd}
+      - TZ=${TZ:-Asia/Shanghai}
+      - MSSQL_PID=Enterprise
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+      - ./database/InitializeDatabase.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./database/maintenance:/opt/mssql/maintenance:ro
+    networks:
+      - chiller-network
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P ${SQL_SERVER_PASSWORD:-YourStrong!Passw0rd} -Q \"SELECT 1\" || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    mem_limit: 4g
+    cpus: '2.0'
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chiller-api
+    hostname: api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${API_ASPNETCORE_ENVIRONMENT:-Production}
+      - ASPNETCORE_URLS=http://+:80
+      - TZ=${TZ:-Asia/Shanghai}
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=ChillerPlantDB;User Id=sa;Password=${SQL_SERVER_PASSWORD:-YourStrong!Passw0rd};TrustServerCertificate=True;MultipleActiveResultSets=True;
+      - ApplicationInsights__ConnectionString=${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+      - MLModel__ModelPath=/app/models/optimization_model.zip
+    ports:
+      - "${API_PORT:-5000}:80"
+      - "47808:47808/udp"
+    volumes:
+      - api-logs:/app/logs
+      - api-models:/app/models
+    networks:
+      - chiller-network
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: '2.0'
+
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: chiller-simulator
+    hostname: simulator
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - API_URL=http://api:80
+      - SIMULATOR_CONFIG=/app/config.json
+    volumes:
+      - ./simulator/config.json:/app/config.json:ro
+    networks:
+      - chiller-network
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://api:80/health', timeout=5).status == 200 else 1)\"" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: '1.0'
+
+networks:
+  chiller-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  sqlserver-data:
+    driver: local
+  api-logs:
+    driver: local
+  api-models:
+    driver: local

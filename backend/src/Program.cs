@@ -8,6 +8,7 @@ using ChillerPlantOptimization.BackgroundServices;
 using ChillerPlantOptimization.Modules.BacnetGateway;
 using ChillerPlantOptimization.Modules.EfficiencyOptimizer;
 using ChillerPlantOptimization.Modules.AlarmManager;
+using Microsoft.ApplicationInsights.AspNetCore.Extensions;
 
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(new ConfigurationBuilder()
@@ -108,6 +109,25 @@ try
     builder.Services.AddHttpClient();
     builder.Services.AddMemoryCache();
 
+    var aiConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"];
+    if (!string.IsNullOrEmpty(aiConnectionString))
+    {
+        builder.Services.AddApplicationInsightsTelemetry(new ApplicationInsightsServiceOptions
+        {
+            ConnectionString = aiConnectionString,
+            EnableAdaptiveSampling = builder.Configuration.GetValue<bool>("ApplicationInsights:EnableAdaptiveSampling", true),
+            EnablePerformanceCounterCollectionModule = builder.Configuration.GetValue<bool>("ApplicationInsights:EnablePerformanceCountersCollection", true),
+            EnableDependencyTrackingTelemetryModule = builder.Configuration.GetValue<bool>("ApplicationInsights:EnableDependencyTracking", true),
+            EnableRequestTrackingTelemetryModule = builder.Configuration.GetValue<bool>("ApplicationInsights:EnableRequestTracking", true)
+        });
+
+        builder.Services.AddApplicationInsightsTelemetryProcessor<Serilog.Sinks.ApplicationInsights.TelemetryConverters.TraceTelemetryConverter>();
+    }
+
+    builder.Services.AddHealthChecks()
+        .AddDbContextCheck<AppDbContext>("database")
+        .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("OK"));
+
     builder.Services.AddHostedService<EfficiencyBackgroundService>();
     builder.Services.AddHostedService<BACnetCollectionBackgroundService>();
     builder.Services.AddHostedService<NotificationBackgroundService>();
@@ -147,6 +167,7 @@ try
 
     app.MapControllers();
     app.MapHub<RealtimeHub>("/hubs/realtime");
+    app.MapHealthChecks("/health");
 
     app.MapGet("/", () => new
     {
