@@ -1,27 +1,28 @@
 using ChillerPlantOptimization.Services;
+using ChillerPlantOptimization.Modules.BacnetGateway;
 
 namespace ChillerPlantOptimization.BackgroundServices;
 
 public class BACnetCollectionBackgroundService : BackgroundService
 {
-    private readonly IBACnetDataCollectionService _bacnetService;
+    private readonly IBacnetGateway _bacnetGateway;
     private readonly ILogger<BACnetCollectionBackgroundService> _logger;
 
     public BACnetCollectionBackgroundService(
-        IBACnetDataCollectionService bacnetService,
+        IBacnetGateway bacnetGateway,
         ILogger<BACnetCollectionBackgroundService> logger)
     {
-        _bacnetService = bacnetService;
+        _bacnetGateway = bacnetGateway;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("BACnet数据采集后台服务已启动");
+        _logger.LogInformation("BACnet数据采集后台服务已启动（模块化架构）");
 
         try
         {
-            await _bacnetService.StartCollectionAsync(stoppingToken);
+            await _bacnetGateway.StartCollectionAsync(stoppingToken);
         }
         catch (OperationCanceledException)
         {

@@ -1,7 +1,11 @@
+using MediatR;
 using Microsoft.AspNetCore.SignalR;
 using ChillerPlantOptimization.Hubs;
 using ChillerPlantOptimization.Services;
 using ChillerPlantOptimization.DTOs;
+using ChillerPlantOptimization.Contracts.Commands;
+using ChillerPlantOptimization.Modules.EfficiencyOptimizer;
+using ChillerPlantOptimization.Modules.AlarmManager;
 
 namespace ChillerPlantOptimization.BackgroundServices;
 
@@ -28,7 +32,7 @@ public class EfficiencyBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("后台定时服务已启动");
+        _logger.LogInformation("后台定时服务已启动（模块化架构）");
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
 
@@ -39,61 +43,35 @@ public class EfficiencyBackgroundService : BackgroundService
                 var now = DateTime.UtcNow;
 
                 using var scope = _serviceProvider.CreateScope();
-                var efficiencyService = scope.ServiceProvider.GetRequiredService<IEfficiencyService>();
-                var alarmService = scope.ServiceProvider.GetRequiredService<IAlarmEngineService>();
-                var optimizationService = scope.ServiceProvider.GetRequiredService<IOptimizationModelService>();
+                var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+                var efficiencyOptimizer = scope.ServiceProvider.GetRequiredService<IEfficiencyOptimizer>();
+                var alarmManager = scope.ServiceProvider.GetRequiredService<IAlarmManager>();
+                var alarmEngine = scope.ServiceProvider.GetRequiredService<IAlarmEngineService>();
 
-                var efficiencyResult = await efficiencyService.CalculateAndSaveSystemCOPAsync(now);
-                if (efficiencyResult != null)
+                var copResult = await mediator.Send(new CalculateCOPCommand { Timestamp = now }, stoppingToken);
+                if (copResult != null)
                 {
-                    var metrics = new
-                    {
-                        Timestamp = efficiencyResult.Timestamp,
-                        DailyEnergy = efficiencyResult.DailyEnergyConsumption,
-                        RealtimeCOP = efficiencyResult.SystemCOP,
-                        EnergySaving = efficiencyResult.EnergySaving,
-                        LoadRate = efficiencyResult.LoadRate
-                    };
-
-                    await _hubContext.Clients.Group("Metrics").ReceiveMetricsUpdate(metrics);
-                    await _hubContext.Clients.Group("Devices").ReceiveEfficiencyUpdate(efficiencyResult);
-
-                    _logger.LogInformation("系统COP计算完成: {COP}", efficiencyResult.SystemCOP);
+                    _logger.LogInformation("系统COP计算完成: {COP}", copResult.SystemCOP);
                 }
 
-                await alarmService.CheckAlarmsAsync(now);
+                await efficiencyOptimizer.UpdateDeviceEfficiencyStatusAsync();
 
-                var activeAlarms = await alarmService.GetActiveAlarmsAsync();
-                foreach (var alarm in activeAlarms.Where(a => a.Status == Models.AlarmStatus.Active))
-                {
-                    var alarmDto = new AlarmDto
-                    {
-                        Id = alarm.Id,
-                        DeviceId = alarm.DeviceId,
-                        AlarmLevel = (int)alarm.AlarmLevel,
-                        AlarmType = (int)alarm.AlarmType,
-                        Message = alarm.Message,
-                        StartTime = alarm.StartTime,
-                        DurationMinutes = alarm.DurationMinutes,
-                        ParameterName = alarm.ParameterName,
-                        ParameterValue = alarm.ParameterValue,
-                        ThresholdValue = alarm.ThresholdValue
-                    };
-                    await _hubContext.Clients.Group("Alarms").ReceiveAlarmUpdate(alarmDto);
-                }
+                var activeAlarmCount = await mediator.Send(new CheckAlarmsCommand { Timestamp = now }, stoppingToken);
+                _logger.LogDebug("告警检测完成，活动告警数: {Count}", activeAlarmCount);
 
                 if ((now - _lastOptimizationRun) >= _optimizationInterval)
                 {
                     _logger.LogInformation("开始执行能效优化推荐");
-                    var recommendation = await optimizationService.GenerateOptimizationRecommendationAsync();
+                    var recommendation = await mediator.Send(new GenerateRecommendationCommand(), stoppingToken);
                     if (recommendation != null)
                     {
-                        _logger.LogInformation("优化推荐已生成，预测COP: {COP}", recommendation.PredictedCOP);
+                        _logger.LogInformation("优化推荐已生成，预测COP: {COP}，版本: {Version}",
+                            recommendation.PredictedCOP, recommendation.ModelVersion);
                     }
                     _lastOptimizationRun = now;
                 }
 
-                await alarmService.ClearExpiredAlarmsAsync(now);
+                await alarmEngine.ClearExpiredAlarmsAsync(now);
             }
             catch (Exception ex)
             {

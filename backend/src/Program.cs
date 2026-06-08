@@ -5,6 +5,9 @@ using ChillerPlantOptimization.Repositories;
 using ChillerPlantOptimization.Services;
 using ChillerPlantOptimization.Hubs;
 using ChillerPlantOptimization.BackgroundServices;
+using ChillerPlantOptimization.Modules.BacnetGateway;
+using ChillerPlantOptimization.Modules.EfficiencyOptimizer;
+using ChillerPlantOptimization.Modules.AlarmManager;
 
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(new ConfigurationBuilder()
@@ -80,12 +83,26 @@ try
     builder.Services.AddScoped<ISystemConfigRepository, SystemConfigRepository>();
 
     builder.Services.AddScoped<IDeviceDataService, DeviceDataService>();
+    builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
+    builder.Services.AddScoped<ISystemConfigService, SystemConfigService>();
+    builder.Services.AddSingleton<INotificationService, NotificationService>();
+
+    builder.Services.Configure<MLModelSettings>(builder.Configuration.GetSection("MLModel"));
+    builder.Services.Configure<AlarmSettings>(builder.Configuration.GetSection("SystemSettings"));
+    builder.Services.Configure<SystemSettings>(builder.Configuration.GetSection("SystemSettings"));
+
+    builder.Services.AddMediatR(cfg =>
+    {
+        cfg.RegisterServicesFromAssemblies(typeof(Program).Assembly);
+    });
+
+    builder.Services.AddSingleton<IBacnetGateway, BacnetGateway>();
+    builder.Services.AddScoped<IEfficiencyOptimizer, EfficiencyOptimizer>();
+    builder.Services.AddScoped<IAlarmManager, AlarmManager>();
+
     builder.Services.AddScoped<IEfficiencyService, EfficiencyService>();
     builder.Services.AddScoped<IOptimizationModelService, OptimizationModelService>();
     builder.Services.AddScoped<IAlarmEngineService, AlarmEngineService>();
-    builder.Services.AddSingleton<INotificationService, NotificationService>();
-    builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
-    builder.Services.AddScoped<ISystemConfigService, SystemConfigService>();
     builder.Services.AddSingleton<IBACnetDataCollectionService, BACnetDataCollectionService>();
 
     builder.Services.AddHttpClient();

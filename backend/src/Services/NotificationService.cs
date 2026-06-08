@@ -12,6 +12,7 @@ public interface INotificationService
     Task PushWeChatAlarmAsync(Alarm alarm);
     Task PushWeChatNotificationAsync(string title, string content, string? userId = null);
     Task StartAggregationLoopAsync(CancellationToken cancellationToken);
+    Task PushAggregatedAlarmsAsync();
 }
 
 public class WeChatMessage
@@ -273,6 +274,11 @@ public class NotificationService : INotificationService
         {
             _logger.LogError(ex, "推送企业微信消息时发生异常");
         }
+    }
+
+    public async Task PushAggregatedAlarmsAsync()
+    {
+        await CheckAndFlushAllBuffersAsync();
     }
 
     private string GetAlarmTypeText(AlarmType type)
