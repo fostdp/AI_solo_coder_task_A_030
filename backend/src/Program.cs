@@ -83,7 +83,7 @@ try
     builder.Services.AddScoped<IEfficiencyService, EfficiencyService>();
     builder.Services.AddScoped<IOptimizationModelService, OptimizationModelService>();
     builder.Services.AddScoped<IAlarmEngineService, AlarmEngineService>();
-    builder.Services.AddScoped<INotificationService, NotificationService>();
+    builder.Services.AddSingleton<INotificationService, NotificationService>();
     builder.Services.AddScoped<IWorkOrderService, WorkOrderService>();
     builder.Services.AddScoped<ISystemConfigService, SystemConfigService>();
     builder.Services.AddSingleton<IBACnetDataCollectionService, BACnetDataCollectionService>();
@@ -93,6 +93,7 @@ try
 
     builder.Services.AddHostedService<EfficiencyBackgroundService>();
     builder.Services.AddHostedService<BACnetCollectionBackgroundService>();
+    builder.Services.AddHostedService<NotificationBackgroundService>();
 
     var app = builder.Build();
 

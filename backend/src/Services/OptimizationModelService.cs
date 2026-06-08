@@ -236,14 +236,27 @@ public class OptimizationModelService : IOptimizationModelService
 
     private EstimatorChain<RegressionPredictionTransformer<FastTreeRegressionModelParameters>> BuildTrainingPipeline()
     {
-        var pipeline = _mlContext.Transforms.Concatenate("Features",
-                nameof(EfficiencyInput.ChilledWaterSupplyTemp),
-                nameof(EfficiencyInput.CoolingWaterInletTemp),
-                nameof(EfficiencyInput.LoadRate),
-                nameof(EfficiencyInput.CentrifugalCount),
-                nameof(EfficiencyInput.ScrewCount),
-                nameof(EfficiencyInput.PumpCount),
-                nameof(EfficiencyInput.TowerCount))
+        var inputColumns = new[]
+        {
+            nameof(EfficiencyInput.ChilledWaterSupplyTemp),
+            nameof(EfficiencyInput.CoolingWaterInletTemp),
+            nameof(EfficiencyInput.LoadRate),
+            nameof(EfficiencyInput.CentrifugalCount),
+            nameof(EfficiencyInput.ScrewCount),
+            nameof(EfficiencyInput.PumpCount),
+            nameof(EfficiencyInput.TowerCount)
+        };
+
+        var scaledColumns = inputColumns.Select(col => col + "Scaled").ToArray();
+
+        var pipeline = _mlContext.Transforms.NormalizeMinMax("ChilledWaterSupplyTempScaled", nameof(EfficiencyInput.ChilledWaterSupplyTemp))
+            .Append(_mlContext.Transforms.NormalizeMinMax("CoolingWaterInletTempScaled", nameof(EfficiencyInput.CoolingWaterInletTemp)))
+            .Append(_mlContext.Transforms.NormalizeMinMax("LoadRateScaled", nameof(EfficiencyInput.LoadRate)))
+            .Append(_mlContext.Transforms.NormalizeMinMax("CentrifugalCountScaled", nameof(EfficiencyInput.CentrifugalCount)))
+            .Append(_mlContext.Transforms.NormalizeMinMax("ScrewCountScaled", nameof(EfficiencyInput.ScrewCount)))
+            .Append(_mlContext.Transforms.NormalizeMinMax("PumpCountScaled", nameof(EfficiencyInput.PumpCount)))
+            .Append(_mlContext.Transforms.NormalizeMinMax("TowerCountScaled", nameof(EfficiencyInput.TowerCount)))
+            .Append(_mlContext.Transforms.Concatenate("Features", scaledColumns))
             .Append(_mlContext.Regression.Trainers.FastTree(
                 labelColumnName: nameof(EfficiencyInput.COP),
                 featureColumnName: "Features",

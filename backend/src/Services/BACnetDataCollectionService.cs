@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -28,6 +29,52 @@ public class BACnetDeviceConfig
     public int InstanceNumber { get; set; }
 }
 
+public class BACnetReceivedPacket
+{
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public int Length { get; set; }
+    public IPEndPoint? RemoteEndPoint { get; set; }
+    public DateTime ReceivedTime { get; set; }
+
+    public void Reset()
+    {
+        Array.Clear(Data, 0, Data.Length);
+        Length = 0;
+        RemoteEndPoint = null;
+        ReceivedTime = DateTime.MinValue;
+    }
+}
+
+public class BACnetPacketPool
+{
+    private readonly ConcurrentQueue<BACnetReceivedPacket> _pool = new();
+    private readonly int _bufferSize;
+
+    public BACnetPacketPool(int initialCapacity = 100, int bufferSize = 1500)
+    {
+        _bufferSize = bufferSize;
+        for (int i = 0; i < initialCapacity; i++)
+        {
+            _pool.Enqueue(new BACnetReceivedPacket { Data = new byte[bufferSize] });
+        }
+    }
+
+    public BACnetReceivedPacket Rent()
+    {
+        if (_pool.TryDequeue(out var packet))
+        {
+            return packet;
+        }
+        return new BACnetReceivedPacket { Data = new byte[_bufferSize] };
+    }
+
+    public void Return(BACnetReceivedPacket packet)
+    {
+        packet.Reset();
+        _pool.Enqueue(packet);
+    }
+}
+
 public class BACnetDataCollectionService : IBACnetDataCollectionService
 {
     private readonly IDeviceRepository _deviceRepository;
@@ -35,6 +82,10 @@ public class BACnetDataCollectionService : IBACnetDataCollectionService
     private readonly IDeviceDataService _deviceDataService;
     private readonly ILogger<BACnetDataCollectionService> _logger;
 
+    private UdpClient? _udpClient;
+    private readonly BACnetPacketPool _packetPool = new(initialCapacity: 200, bufferSize: 1500);
+    private readonly ConcurrentQueue<BACnetReceivedPacket> _receiveQueue = new();
+    private readonly SemaphoreSlim _queueSemaphore = new(0);
     private readonly Dictionary<string, BACnetDataPoint[]> _dataPoints = new()
     {
         ["centrifugal_chiller"] = new[]
@@ -110,6 +161,164 @@ public class BACnetDataCollectionService : IBACnetDataCollectionService
     {
         _logger.LogInformation("BACnet数据采集服务已启动");
 
+        try
+        {
+            InitializeUdpClient();
+
+            var receiveTask = StartReceiveLoopAsync(cancellationToken);
+            var processTask = StartProcessLoopAsync(cancellationToken);
+            var pollTask = StartPollingLoopAsync(cancellationToken);
+
+            await Task.WhenAll(receiveTask, processTask, pollTask);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "BACnet数据采集服务发生致命错误");
+        }
+        finally
+        {
+            _udpClient?.Close();
+            _udpClient?.Dispose();
+            _logger.LogInformation("BACnet数据采集服务已停止");
+        }
+    }
+
+    private void InitializeUdpClient()
+    {
+        var port = 47808;
+        _udpClient = new UdpClient();
+
+        _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReceiveBufferSize, 8 * 1024 * 1024);
+        _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBufferSize, 2 * 1024 * 1024);
+        _udpClient.Client.SetSocketOption(SocketOptionLevel.Udp, SocketOptionName.NoChecksum, false);
+        _udpClient.Client.ReceiveTimeout = 5000;
+
+        try
+        {
+            _udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, port));
+            _logger.LogInformation("UDP Socket已绑定到端口 {Port}，接收缓冲区: {BufferSize}MB", port, 8);
+        }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
+        {
+            _logger.LogWarning("端口 {Port} 已被占用，尝试使用任意可用端口", port);
+            _udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, 0));
+            var localPort = ((IPEndPoint)_udpClient.Client.LocalEndPoint!).Port;
+            _logger.LogInformation("已绑定到备用端口 {Port}", localPort);
+        }
+    }
+
+    private async Task StartReceiveLoopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("UDP接收循环已启动");
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var packet = _packetPool.Rent();
+                var result = await _udpClient!.ReceiveAsync(cancellationToken);
+
+                if (result.Buffer.Length > packet.Data.Length)
+                {
+                    _logger.LogWarning("接收到的数据包过大 ({Size} bytes)，丢弃", result.Buffer.Length);
+                    _packetPool.Return(packet);
+                    continue;
+                }
+
+                Buffer.BlockCopy(result.Buffer, 0, packet.Data, 0, result.Buffer.Length);
+                packet.Length = result.Buffer.Length;
+                packet.RemoteEndPoint = result.RemoteEndPoint;
+                packet.ReceivedTime = DateTime.UtcNow;
+
+                _receiveQueue.Enqueue(packet);
+                _queueSemaphore.Release();
+
+                if (_receiveQueue.Count > 1000)
+                {
+                    _logger.LogWarning("接收队列积压严重，当前队列长度: {Count}", _receiveQueue.Count);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+            {
+                continue;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "UDP接收发生错误");
+                await Task.Delay(100, cancellationToken);
+            }
+        }
+
+        _logger.LogInformation("UDP接收循环已停止");
+    }
+
+    private async Task StartProcessLoopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("数据包处理循环已启动");
+
+        var processors = new Task[Environment.ProcessorCount];
+        for (int i = 0; i < processors.Length; i++)
+        {
+            processors[i] = ProcessPacketsAsync(cancellationToken, i);
+        }
+
+        await Task.WhenAll(processors);
+
+        _logger.LogInformation("数据包处理循环已停止");
+    }
+
+    private async Task ProcessPacketsAsync(CancellationToken cancellationToken, int processorId)
+    {
+        _logger.LogDebug("数据包处理器 {Id} 已启动", processorId);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await _queueSemaphore.WaitAsync(cancellationToken);
+
+                if (_receiveQueue.TryDequeue(out var packet))
+                {
+                    try
+                    {
+                        await ProcessReceivedPacketAsync(packet);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "处理BACnet数据包失败");
+                    }
+                    finally
+                    {
+                        _packetPool.Return(packet);
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "数据包处理器 {Id} 发生错误", processorId);
+            }
+        }
+
+        _logger.LogDebug("数据包处理器 {Id} 已停止", processorId);
+    }
+
+    private async Task ProcessReceivedPacketAsync(BACnetReceivedPacket packet)
+    {
+        await Task.CompletedTask;
+    }
+
+    private async Task StartPollingLoopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("设备轮询循环已启动");
+
         while (!cancellationToken.IsCancellationRequested)
         {
             try
@@ -136,19 +345,19 @@ public class BACnetDataCollectionService : IBACnetDataCollectionService
                 if (allDeviceData.Any())
                 {
                     await _deviceDataService.AddRangeDeviceDataAsync(allDeviceData);
-                    _logger.LogInformation("已采集 {Count} 台设备数据", allDeviceData.Count);
+                    _logger.LogInformation("已采集 {Count} 台设备数据，队列长度: {QueueCount}", allDeviceData.Count, _receiveQueue.Count);
                 }
 
                 await Task.Delay(30000, cancellationToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "BACnet数据采集发生错误");
+                _logger.LogError(ex, "设备轮询发生错误");
                 await Task.Delay(5000, cancellationToken);
             }
         }
 
-        _logger.LogInformation("BACnet数据采集服务已停止");
+        _logger.LogInformation("设备轮询循环已停止");
     }
 
     public async Task<DeviceData?> ReadDeviceDataAsync(string deviceId)
